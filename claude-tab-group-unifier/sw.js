@@ -15,6 +15,13 @@
 //    仅由 alarms 周期处理，且有 90s 组龄保护窗——避免会话建组后秒被收编。
 // 2. 空白 new tab 仅在源组带 ⌛ 时丢弃；其余并入主组由用户自理。
 // 3. 主组为 ✅（会话在用）时不再改名，消除组名抖动；闲置态才归一为 "Claude"。
+//
+// v1.1.3 存量修复（两项联动，缺一即回归）：
+// 1. manifest 补 "storage" 权限：缺失时 chrome.storage 为 undefined，seenAt() 抛
+//    TypeError 被 normalize 吞掉——90s 新组保护窗从未生效，且候选含非闲置组时整轮
+//    normalize 中途 abort。
+// 2. ✅（会话在用）组永不收编：保护窗修复后真正生效，超龄非 MCP ✅ 组（如并行纯
+//    聊天会话）会被并散触发 F4 型故障，活跃组与 MCP 工具组同级豁免。
 
 const IDLE_PREFIXES = ["⌛", "⏳"];
 const CLAUDE_RE = /^(✅|⌛|⏳)?Claude$/;
@@ -70,6 +77,8 @@ async function normalize() {
     for (const g of candidates.filter((x) => x.id !== master.id)) {
       const fresh = await chrome.tabGroups.get(g.id).catch(() => null);
       if (!fresh || !isClaudeGroup(fresh.title) || mcp.has(fresh.id)) continue;
+      // ✅（会话在用）组永不收编：与 MCP 工具组同级豁免（v1.1.3）
+      if (fresh.title.startsWith("✅")) continue;
       // 保护窗：非明确闲置的组（会话新建、尚未打 ✅）组龄不足则本轮跳过
       if (!isIdle(fresh.title) && Date.now() - (await seenAt(fresh.id)) < PROTECT_MS) continue;
 
